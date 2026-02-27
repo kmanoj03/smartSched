@@ -31,6 +31,7 @@ const scheduleExplanationSchema = new Schema(
 const shiftSchema = new Schema(
   {
     shiftId: { type: String, required: true },
+    day: { type: String, required: true },
     startISO: { type: String, required: true },
     endISO: { type: String, required: true },
     required: {

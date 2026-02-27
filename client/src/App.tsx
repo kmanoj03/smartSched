@@ -99,6 +99,7 @@ const api = async <T,>(path: string, options?: RequestInit): Promise<T> => {
 };
 
 const toTime = (iso: string) => new Date(iso).toISOString().slice(11, 16);
+const dayFromISO = (iso: string) => DAYS[(new Date(iso).getUTCDay() + 6) % 7];
 
 function App() {
   const [weekStartISO, setWeekStartISO] = useState("2026-03-16");
@@ -171,7 +172,7 @@ function App() {
 
   const shiftsByDay = useMemo(() => {
     if (!schedule) return [];
-    return schedule.shifts.filter((shift) => shift.day === selectedDay);
+    return schedule.shifts.filter((shift) => (shift.day ?? dayFromISO(shift.startISO)) === selectedDay);
   }, [schedule, selectedDay]);
 
   const selectedShift = useMemo(
@@ -294,9 +295,14 @@ function App() {
           onClick={() =>
             runAction(async () => {
               await api(`/seed/demo?weekStartISO=${weekStartISO}`, { method: "POST" });
+              await api("/optimize/run", {
+                method: "POST",
+                headers: jsonHeaders,
+                body: JSON.stringify({ weekStartISO })
+              });
               await loadCrew();
               await loadSchedule();
-              setStatusMessage("Demo seed loaded for this week.");
+              setStatusMessage("Demo seed + optimizer run complete.");
             })
           }
           className="rounded bg-emerald-700 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
