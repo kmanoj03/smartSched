@@ -57,6 +57,25 @@ type GraphTraceResponse = {
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:4000";
 const TAG_OPTIONS = ["OPEN_CERTIFIED", "CLOSE_CERTIFIED", "TOUR_GUIDE", "FLOATER"];
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const DEMO_STEPS = [
+  "Import Availability",
+  "Import Events",
+  "Run Optimizer",
+  "Open Shift Details",
+  "Show Graph Trace",
+  "Pull Watch Updates",
+  "Export CSV"
+];
+
+const JUDGE_SCRIPT = [
+  "Import availability and events from CSV with row-level validation and rejection summaries.",
+  "Run optimizer to generate a feasible schedule with score and coverage.",
+  "Open any shift to show assignment reasons and deterministic scoring.",
+  "Click Graph Trace to prove explainability paths from Shift -> Skill -> Person in Neo4j.",
+  "Use Watch Mode to pull external updates and auto-detect week changes.",
+  "Show What-if Option A (minimal disruption) vs Option B (best fit).",
+  "Export final schedule CSV for manual WhenToWork upload."
+];
 const METRIC_KEYS: Array<keyof Metrics> = [
   "strength",
   "criticalThinking",
@@ -66,6 +85,7 @@ const METRIC_KEYS: Array<keyof Metrics> = [
 ];
 
 const jsonHeaders = { "Content-Type": "application/json" };
+const JUDGE_SCRIPT_STORAGE_KEY = "smartsched.judgeScript.visible";
 
 const api = async <T,>(path: string, options?: RequestInit): Promise<T> => {
   const response = await fetch(`${API_BASE}${path}`, options);
@@ -124,6 +144,11 @@ function App() {
     };
   } | null>(null);
   const [isBusy, setIsBusy] = useState(false);
+  const [isJudgeScriptVisible, setIsJudgeScriptVisible] = useState<boolean>(() => {
+    const stored = localStorage.getItem(JUDGE_SCRIPT_STORAGE_KEY);
+    if (stored === null) return true;
+    return stored === "true";
+  });
 
   const crewNameById = useMemo(
     () => new Map(crew.map((member) => [member._id, member.name])),
@@ -178,6 +203,10 @@ function App() {
   useEffect(() => {
     void loadCrew();
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem(JUDGE_SCRIPT_STORAGE_KEY, String(isJudgeScriptVisible));
+  }, [isJudgeScriptVisible]);
 
   const runAction = async (fn: () => Promise<void>) => {
     setIsBusy(true);
@@ -236,10 +265,22 @@ function App() {
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-6 md:px-8">
-      <h1 className="text-3xl font-bold">smartSched Demo Console</h1>
-      <p className="mt-2 text-slate-600">
-        Import → Run → Click shift → Why → Watch Mode → What-if → Export
-      </p>
+      <div className="rounded-xl border border-slate-200 bg-gradient-to-r from-slate-900 to-slate-700 p-5 text-white">
+        <h1 className="text-3xl font-bold">smartSched Demo Console</h1>
+        <p className="mt-1 text-sm text-slate-200">
+          Import → Run → Click shift → Why → Watch Mode → What-if → Export
+        </p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {DEMO_STEPS.map((step, idx) => (
+            <span
+              key={step}
+              className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-medium"
+            >
+              {idx + 1}. {step}
+            </span>
+          ))}
+        </div>
+      </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-white p-4">
         <label className="text-sm font-semibold">Week Start ISO</label>
@@ -249,6 +290,20 @@ function App() {
           className="rounded border border-slate-300 px-3 py-2 text-sm"
           placeholder="YYYY-MM-DD"
         />
+        <button
+          onClick={() =>
+            runAction(async () => {
+              await api(`/seed/demo?weekStartISO=${weekStartISO}`, { method: "POST" });
+              await loadCrew();
+              await loadSchedule();
+              setStatusMessage("Demo seed loaded for this week.");
+            })
+          }
+          className="rounded bg-emerald-700 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+          disabled={isBusy}
+        >
+          Quick Seed Week
+        </button>
         <button
           onClick={() => runAction(loadSchedule)}
           className="rounded bg-slate-800 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
@@ -260,7 +315,7 @@ function App() {
       </div>
 
       <section className="mt-6 rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="text-xl font-semibold">1) Crew Metrics</h2>
+        <h2 className="text-xl font-semibold text-slate-900">1) Crew Metrics</h2>
         <p className="mt-1 text-sm text-slate-600">Edit metrics and tags, then save each person.</p>
         <div className="mt-4 space-y-4">
           {crew.map((member) => (
@@ -323,7 +378,7 @@ function App() {
 
       <section className="mt-6 grid gap-6 lg:grid-cols-2">
         <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="text-xl font-semibold">2) Import Availability</h2>
+          <h2 className="text-xl font-semibold text-slate-900">2) Import Availability</h2>
           <p className="mt-1 text-xs text-slate-600">
             CSV columns: crewName,day,start,end,status
           </p>
@@ -374,7 +429,7 @@ function App() {
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="text-xl font-semibold">3) Import Events</h2>
+          <h2 className="text-xl font-semibold text-slate-900">3) Import Events</h2>
           <p className="mt-1 text-xs text-slate-600">
             CSV columns: name,startISO,endISO,location,group,cancelled
           </p>
@@ -426,7 +481,7 @@ function App() {
       </section>
 
       <section className="mt-6 rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="text-xl font-semibold">4) Run Optimizer</h2>
+        <h2 className="text-xl font-semibold text-slate-900">4) Run Optimizer</h2>
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <button
             onClick={() =>
@@ -453,7 +508,17 @@ function App() {
           </button>
           {runOptimizeResult && (
             <p className="text-sm">
-              <span className="font-semibold">Status:</span> {runOptimizeResult.status} ·{" "}
+              <span className="font-semibold">Status:</span>{" "}
+              <span
+                className={`rounded px-2 py-1 text-xs font-semibold ${
+                  runOptimizeResult.status === "FEASIBLE"
+                    ? "bg-emerald-100 text-emerald-800"
+                    : "bg-rose-100 text-rose-700"
+                }`}
+              >
+                {runOptimizeResult.status}
+              </span>{" "}
+              ·{" "}
               <span className="font-semibold">WeekId:</span> {runOptimizeResult.weekId} ·{" "}
               <span className="font-semibold">Score:</span>{" "}
               {runOptimizeResult.totalScore ?? "n/a"}
@@ -476,7 +541,7 @@ function App() {
       </section>
 
       <section className="mt-6 rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="text-xl font-semibold">5) Schedule Viewer</h2>
+        <h2 className="text-xl font-semibold text-slate-900">5) Schedule Viewer</h2>
         <div className="mt-3 flex flex-wrap gap-2">
           {DAYS.map((day) => (
             <button
@@ -591,7 +656,10 @@ function App() {
       </section>
 
       <section className="mt-6 rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="text-xl font-semibold">6) Watch Mode (Yutori)</h2>
+        <h2 className="text-xl font-semibold text-slate-900">6) Watch Mode (Yutori)</h2>
+        <p className="mt-1 text-xs text-slate-600">
+          Demo autonomy: pull changes, mark week dirty, and auto-return What-if options.
+        </p>
         <div className="mt-3 grid gap-3 md:grid-cols-4">
           <input
             value={watchQuery}
@@ -687,7 +755,7 @@ function App() {
       </section>
 
       <section className="mt-6 rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="text-xl font-semibold">7) Export</h2>
+        <h2 className="text-xl font-semibold text-slate-900">7) Export</h2>
         <button
           onClick={() => {
             window.open(`${API_BASE}/export/week/${weekStartISO}.csv`, "_blank");
@@ -697,6 +765,41 @@ function App() {
           Download Week CSV
         </button>
       </section>
+
+      <div className="fixed bottom-4 right-4 z-20 hidden lg:block">
+        {!isJudgeScriptVisible && (
+          <button
+            onClick={() => setIsJudgeScriptVisible(true)}
+            className="rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 shadow"
+          >
+            Show Judge Script
+          </button>
+        )}
+        {isJudgeScriptVisible && (
+          <aside className="w-96 rounded-xl border border-slate-300 bg-white/95 p-4 shadow-xl backdrop-blur">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-bold text-slate-900">Judge Script</p>
+              <button
+                onClick={() => setIsJudgeScriptVisible(false)}
+                className="rounded border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-100"
+              >
+                Hide
+              </button>
+            </div>
+            <p className="mt-1 text-xs text-slate-500">Talk track for a 2-3 minute straight-line demo.</p>
+            <ol className="mt-3 space-y-2 text-xs text-slate-700">
+              {JUDGE_SCRIPT.map((line, idx) => (
+                <li key={line} className="flex gap-2">
+                  <span className="mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-slate-800 text-[10px] font-semibold text-white">
+                    {idx + 1}
+                  </span>
+                  <span>{line}</span>
+                </li>
+              ))}
+            </ol>
+          </aside>
+        )}
+      </div>
     </div>
   );
 }
