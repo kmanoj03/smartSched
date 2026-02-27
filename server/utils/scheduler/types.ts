@@ -20,6 +20,7 @@ export interface CrewMemberInput {
   role: CrewRole;
   isInternationalStudent: boolean;
   tags: string[];
+  metrics: DemandVector;
 }
 
 export interface AvailabilityBlock {
