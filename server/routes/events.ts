@@ -1,8 +1,9 @@
 import { Router } from "express";
-import { notImplemented } from "../handlers/notImplementedHandler";
+import { getEventsByWeek, upsertEventWeek } from "../handlers/eventsHandler";
 
 const eventsRouter = Router();
 
-eventsRouter.all("/", notImplemented);
+eventsRouter.post("/upsertWeek", upsertEventWeek);
+eventsRouter.get("/week/:weekStartISO", getEventsByWeek);
 
 export default eventsRouter;

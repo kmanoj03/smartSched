@@ -1,8 +1,9 @@
 import { Router } from "express";
-import { notImplemented } from "../handlers/notImplementedHandler";
+import { listCrew, upsertCrewMember } from "../handlers/crewHandler";
 
 const crewRouter = Router();
 
-crewRouter.all("/", notImplemented);
+crewRouter.post("/upsert", upsertCrewMember);
+crewRouter.get("/list", listCrew);
 
 export default crewRouter;

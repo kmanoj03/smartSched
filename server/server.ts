@@ -1,6 +1,7 @@
 import cors from "cors";
 import express from "express";
 import routes from "./routes";
+import { connectToDatabase } from "./utils/db";
 import { loadEnv } from "./utils/env";
 import { errorHandler, notFoundHandler } from "./utils/errorHandler";
 import { requestLogger } from "./utils/requestLogger";
@@ -23,6 +24,14 @@ app.use(routes);
 app.use(notFoundHandler);
 app.use(errorHandler);
 
-app.listen(port, () => {
-  console.log(`API server listening on http://localhost:${port}`);
+const startServer = async (): Promise<void> => {
+  await connectToDatabase();
+  app.listen(port, () => {
+    console.log(`API server listening on http://localhost:${port}`);
+  });
+};
+
+void startServer().catch((error: unknown) => {
+  console.error("Failed to start server", error);
+  process.exit(1);
 });
