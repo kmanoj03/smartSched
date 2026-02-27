@@ -9,15 +9,22 @@ const seedQuerySchema = z.object({
     .regex(/^\d{4}-\d{2}-\d{2}$/, "weekStartISO must be in YYYY-MM-DD format")
 });
 
-const makeAvailabilityDays = (status: "PREFER" | "AVAILABLE" | "CANNOT") => ({
-  Mon: [{ start: "09:00", end: "17:00", status }],
-  Tue: [{ start: "09:00", end: "17:00", status }],
-  Wed: [{ start: "09:00", end: "17:00", status }],
-  Thu: [{ start: "09:00", end: "17:00", status }],
-  Fri: [{ start: "09:00", end: "17:00", status }],
-  Sat: status === "CANNOT" ? [] : [{ start: "10:00", end: "14:00", status }],
-  Sun: []
-});
+const makeAvailabilityDays = (index: number) => {
+  const prefersMonday = index % 2 === 0;
+
+  return {
+    // Keep demo schedules feasible by covering the full event window + optimizer buffer.
+    Mon: [
+      { start: "09:00", end: "23:30", status: prefersMonday ? "PREFER" : "AVAILABLE" as const }
+    ],
+    Tue: [{ start: "09:00", end: "17:00", status: "AVAILABLE" as const }],
+    Wed: [{ start: "09:00", end: "17:00", status: "AVAILABLE" as const }],
+    Thu: [{ start: "09:00", end: "17:00", status: "AVAILABLE" as const }],
+    Fri: [{ start: "09:00", end: "17:00", status: "AVAILABLE" as const }],
+    Sat: index % 3 === 0 ? [{ start: "10:00", end: "14:00", status: "PREFER" as const }] : [],
+    Sun: []
+  };
+};
 
 export const seedDemoData = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -116,15 +123,12 @@ export const seedDemoData = async (req: Request, res: Response, next: NextFuncti
 
     await Promise.all(
       crewDocs.map((crew, index) => {
-        const status: "PREFER" | "AVAILABLE" | "CANNOT" =
-          index % 3 === 0 ? "PREFER" : index % 3 === 1 ? "AVAILABLE" : "CANNOT";
-
         return AvailabilityWeekModel.findOneAndUpdate(
           { weekStartISO, crewId: crew._id },
           {
             weekStartISO,
             crewId: crew._id,
-            days: makeAvailabilityDays(status)
+            days: makeAvailabilityDays(index)
           },
           { upsert: true, new: true, setDefaultsOnInsert: true }
         );

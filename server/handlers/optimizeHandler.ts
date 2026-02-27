@@ -16,7 +16,10 @@ const whatIfSchema = z.object({
   newEvent: eventDtoSchema
 });
 
-const toOptimizeInput = async (weekStartISO: string, appendedEvent?: z.infer<typeof eventDtoSchema>): Promise<OptimizeWeekInput> => {
+export const buildOptimizeInput = async (
+  weekStartISO: string,
+  appendedEvent?: z.infer<typeof eventDtoSchema>
+): Promise<OptimizeWeekInput> => {
   const [crewDocs, availabilityDocs, eventWeek] = await Promise.all([
     CrewMemberModel.find().lean(),
     AvailabilityWeekModel.find({ weekStartISO }).lean(),
@@ -129,10 +132,53 @@ const diffFromExisting = (
   return { changedAssignments, addedShifts, removedShifts };
 };
 
+export const runWhatIfComputation = async (
+  weekStartISO: string,
+  newEvent: z.infer<typeof eventDtoSchema>
+): Promise<{
+  optionA: OptimizeWeekResult;
+  optionB: OptimizeWeekResult;
+  diffSummary: {
+    againstWeekId: string | null;
+    optionA: { changedAssignments: number; addedShifts: number; removedShifts: number };
+    optionB: { changedAssignments: number; addedShifts: number; removedShifts: number };
+    recommendation: string;
+  };
+}> => {
+  const [input, existingSchedule] = await Promise.all([
+    buildOptimizeInput(weekStartISO, newEvent),
+    ScheduleWeekModel.findOne({ weekStartISO }).sort({ createdAt: -1 }).lean()
+  ]);
+
+  const preferredAssigneesByShift = existingSchedule ? assigneesByShift(existingSchedule) : {};
+  const optionA = optimizeWeek(input, {
+    preferredAssigneesByShift,
+    disruptionPenalty: 2
+  });
+  const optionB = optimizeWeek(input);
+
+  const optionADiff = diffFromExisting(existingSchedule, optionA);
+  const optionBDiff = diffFromExisting(existingSchedule, optionB);
+
+  return {
+    optionA,
+    optionB,
+    diffSummary: {
+      againstWeekId: existingSchedule?.weekId ?? null,
+      optionA: optionADiff,
+      optionB: optionBDiff,
+      recommendation:
+        optionA.meta.status === "FEASIBLE" && optionADiff.changedAssignments <= optionBDiff.changedAssignments
+          ? "Option A minimizes disruption."
+          : "Option B gives better fit under current constraints."
+    }
+  };
+};
+
 export const runOptimize = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { weekStartISO } = runOptimizeSchema.parse(req.body);
-    const input = await toOptimizeInput(weekStartISO);
+    const input = await buildOptimizeInput(weekStartISO);
     const result = optimizeWeek(input);
     const weekId = `${weekStartISO}-${randomUUID().slice(0, 8)}`;
 
@@ -167,34 +213,8 @@ export const runOptimize = async (req: Request, res: Response, next: NextFunctio
 export const whatIfOptimize = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { weekStartISO, newEvent } = whatIfSchema.parse(req.body);
-    const [input, existingSchedule] = await Promise.all([
-      toOptimizeInput(weekStartISO, newEvent),
-      ScheduleWeekModel.findOne({ weekStartISO }).sort({ createdAt: -1 }).lean()
-    ]);
-
-    const preferredAssigneesByShift = existingSchedule ? assigneesByShift(existingSchedule) : {};
-    const optionA = optimizeWeek(input, {
-      preferredAssigneesByShift,
-      disruptionPenalty: 2
-    });
-    const optionB = optimizeWeek(input);
-
-    const optionADiff = diffFromExisting(existingSchedule, optionA);
-    const optionBDiff = diffFromExisting(existingSchedule, optionB);
-
-    res.json({
-      optionA,
-      optionB,
-      diffSummary: {
-        againstWeekId: existingSchedule?.weekId ?? null,
-        optionA: optionADiff,
-        optionB: optionBDiff,
-        recommendation:
-          optionA.meta.status === "FEASIBLE" && optionADiff.changedAssignments <= optionBDiff.changedAssignments
-            ? "Option A minimizes disruption."
-            : "Option B gives better fit under current constraints."
-      }
-    });
+    const result = await runWhatIfComputation(weekStartISO, newEvent);
+    res.json(result);
   } catch (error) {
     if (error instanceof z.ZodError) {
       next(new HttpError(error.issues.map((issue) => issue.message).join("; "), "VALIDATION_ERROR", 400));
