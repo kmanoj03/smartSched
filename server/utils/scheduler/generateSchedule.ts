@@ -6,6 +6,7 @@ import type {
   DayKey,
   DemandShift,
   OptimizeWeekInput,
+  OptimizeWeekOptions,
   OptimizeWeekResult,
   ScheduleExplanation
 } from "./types";
@@ -108,6 +109,7 @@ interface CandidateEvaluation {
   projectedHours: number;
   projectedCloseCount: number;
   projectedLateCount: number;
+  disruptionPenalty: number;
 }
 
 const isLateShift = (shift: DemandShift): boolean => isoMinutes(shift.endISO) >= LATE_SHIFT_THRESHOLD_MINUTES;
@@ -121,6 +123,8 @@ const evaluateCandidate = (args: {
   closeShiftIds: Set<string>;
   closeCountsByPerson: Map<string, number>;
   lateCountsByPerson: Map<string, number>;
+  preferredAssigneesByShift: Record<string, string[]>;
+  disruptionPenaltyWeight: number;
 }): CandidateEvaluation | null => {
   const {
     person,
@@ -130,7 +134,9 @@ const evaluateCandidate = (args: {
     availabilityByCrew,
     closeShiftIds,
     closeCountsByPerson,
-    lateCountsByPerson
+    lateCountsByPerson,
+    preferredAssigneesByShift,
+    disruptionPenaltyWeight
   } = args;
   const day = dayFromIso(shift.startISO);
   const shiftStartMins = isoMinutes(shift.startISO);
@@ -156,7 +162,9 @@ const evaluateCandidate = (args: {
   const skillFit = skillFitScore(person.metrics, shift.demandVector);
   const preferenceBonus = preferenceStatus === "PREFER" ? 2 : 0;
   const continuityBonus = previousShiftAssignees.has(person.id) ? 1 : 0;
-  const totalScore = skillFit + preferenceBonus + continuityBonus - fairnessPenalty;
+  const preferredSet = new Set(preferredAssigneesByShift[shift.shiftId] ?? []);
+  const disruptionPenalty = preferredSet.size > 0 && !preferredSet.has(person.id) ? disruptionPenaltyWeight : 0;
+  const totalScore = skillFit + preferenceBonus + continuityBonus - fairnessPenalty - disruptionPenalty;
 
   return {
     person,
@@ -168,7 +176,8 @@ const evaluateCandidate = (args: {
     totalScore,
     projectedHours,
     projectedCloseCount,
-    projectedLateCount
+    projectedLateCount,
+    disruptionPenalty
   };
 };
 
@@ -205,6 +214,9 @@ const explanationForAssignment = (args: {
   if (evaluation.continuityBonus > 0) {
     reasons.push("Continuity: kept for overlap coverage");
   }
+  if (evaluation.disruptionPenalty > 0) {
+    reasons.push("Disruption penalty applied: not in previous assignment for this shift");
+  }
 
   return {
     personId: person.id,
@@ -234,6 +246,8 @@ const assignRole = (args: {
   closeCountsByPerson: Map<string, number>;
   lateCountsByPerson: Map<string, number>;
   explanations: Record<string, ScheduleExplanation[]>;
+  preferredAssigneesByShift: Record<string, string[]>;
+  disruptionPenaltyWeight: number;
 }): string[] => {
   const {
     shift,
@@ -246,7 +260,9 @@ const assignRole = (args: {
     openShiftIds,
     closeCountsByPerson,
     lateCountsByPerson,
-    explanations
+    explanations,
+    preferredAssigneesByShift,
+    disruptionPenaltyWeight
   } = args;
   const assigned = new Set<string>();
 
@@ -262,7 +278,9 @@ const assignRole = (args: {
           availabilityByCrew,
           closeShiftIds,
           closeCountsByPerson,
-          lateCountsByPerson
+          lateCountsByPerson,
+          preferredAssigneesByShift,
+          disruptionPenaltyWeight
         })
       )
       .filter((candidate): candidate is CandidateEvaluation => candidate !== null)
@@ -311,6 +329,8 @@ const ensureTagOnShift = (args: {
   closeCountsByPerson: Map<string, number>;
   lateCountsByPerson: Map<string, number>;
   explanations: Record<string, ScheduleExplanation[]>;
+  preferredAssigneesByShift: Record<string, string[]>;
+  disruptionPenaltyWeight: number;
 }): boolean => {
   const {
     shift,
@@ -322,7 +342,9 @@ const ensureTagOnShift = (args: {
     openShiftIds,
     closeCountsByPerson,
     lateCountsByPerson,
-    explanations
+    explanations,
+    preferredAssigneesByShift,
+    disruptionPenaltyWeight
   } = args;
   const alreadyAssigned = [...shift.assignments.crewIds, ...shift.assignments.supervisorIds];
   if (alreadyAssigned.some((id) => allCrew.find((person) => person.id === id)?.tags.includes(tag))) {
@@ -340,7 +362,9 @@ const ensureTagOnShift = (args: {
         availabilityByCrew,
         closeShiftIds,
         closeCountsByPerson,
-        lateCountsByPerson
+        lateCountsByPerson,
+        preferredAssigneesByShift,
+        disruptionPenaltyWeight
       })
     )
     .filter((evaluation): evaluation is CandidateEvaluation => evaluation !== null)
@@ -382,9 +406,12 @@ const ensureTagOnShift = (args: {
 interface GenerateScheduleInput {
   input: OptimizeWeekInput;
   demandShifts: DemandShift[];
+  options: OptimizeWeekOptions;
 }
 
-export const generateSchedule = ({ input, demandShifts }: GenerateScheduleInput): OptimizeWeekResult => {
+export const generateSchedule = ({ input, demandShifts, options }: GenerateScheduleInput): OptimizeWeekResult => {
+  const preferredAssigneesByShift = options.preferredAssigneesByShift ?? {};
+  const disruptionPenaltyWeight = options.disruptionPenalty ?? 0;
   const crew = [...input.crew].sort(compareDeterministic);
   const crewById = new Map(crew.map((member) => [member.id, member]));
   const availabilityByCrew = buildAvailabilityLookup(input.availability);
@@ -438,7 +465,9 @@ export const generateSchedule = ({ input, demandShifts }: GenerateScheduleInput)
       openShiftIds,
       closeCountsByPerson,
       lateCountsByPerson,
-      explanations
+      explanations,
+      preferredAssigneesByShift,
+      disruptionPenaltyWeight
     });
 
     shift.assignments.crewIds = assignRole({
@@ -452,7 +481,9 @@ export const generateSchedule = ({ input, demandShifts }: GenerateScheduleInput)
       openShiftIds,
       closeCountsByPerson,
       lateCountsByPerson,
-      explanations
+      explanations,
+      preferredAssigneesByShift,
+      disruptionPenaltyWeight
     });
 
     if (shift.assignments.supervisorIds.length < shift.required.supervisor) {
@@ -477,7 +508,9 @@ export const generateSchedule = ({ input, demandShifts }: GenerateScheduleInput)
         openShiftIds,
         closeCountsByPerson,
         lateCountsByPerson,
-        explanations
+        explanations,
+        preferredAssigneesByShift,
+        disruptionPenaltyWeight
       })
     ) {
       reasons.push(`Missing OPEN_CERTIFIED coverage on opening shift ${first.shiftId}`);
@@ -496,7 +529,9 @@ export const generateSchedule = ({ input, demandShifts }: GenerateScheduleInput)
         openShiftIds,
         closeCountsByPerson,
         lateCountsByPerson,
-        explanations
+        explanations,
+        preferredAssigneesByShift,
+        disruptionPenaltyWeight
       })
     ) {
       reasons.push(`Missing CLOSE_CERTIFIED coverage on closing shift ${last.shiftId}`);

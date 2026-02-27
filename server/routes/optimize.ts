@@ -1,8 +1,9 @@
 import { Router } from "express";
-import { notImplemented } from "../handlers/notImplementedHandler";
+import { runOptimize, whatIfOptimize } from "../handlers/optimizeHandler";
 
 const optimizeRouter = Router();
 
-optimizeRouter.all("/", notImplemented);
+optimizeRouter.post("/run", runOptimize);
+optimizeRouter.post("/whatif", whatIfOptimize);
 
 export default optimizeRouter;

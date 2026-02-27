@@ -103,6 +103,11 @@ export interface OptimizeWeekInput {
   events: SchedulerEventInput[];
 }
 
+export interface OptimizeWeekOptions {
+  preferredAssigneesByShift?: Record<string, string[]>;
+  disruptionPenalty?: number;
+}
+
 export interface OptimizeWeekResult {
   weekStartISO: string;
   shifts: DemandShift[];

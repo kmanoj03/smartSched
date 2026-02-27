@@ -1,8 +1,8 @@
 import { Router } from "express";
-import { notImplemented } from "../handlers/notImplementedHandler";
+import { exportWeekCsv } from "../handlers/exportHandler";
 
 const exportRouter = Router();
 
-exportRouter.all("/", notImplemented);
+exportRouter.get("/week/:weekStartISO.csv", exportWeekCsv);
 
 export default exportRouter;

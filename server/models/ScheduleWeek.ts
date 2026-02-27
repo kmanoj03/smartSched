@@ -59,7 +59,9 @@ const scheduleWeekSchema = new Schema(
     meta: {
       status: { type: String, enum: ["FEASIBLE", "INFEASIBLE"], required: true },
       totalScore: { type: Number, required: false },
-      violations: { type: [Schema.Types.Mixed], required: false }
+      violations: { type: [Schema.Types.Mixed], required: false },
+      reasons: { type: [String], required: false },
+      suggestions: { type: [String], required: false }
     }
   },
   { timestamps: true }
