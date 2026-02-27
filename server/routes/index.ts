@@ -5,6 +5,7 @@ import explainRouter from "./explain";
 import eventsRouter from "./events";
 import exportRouter from "./export";
 import healthRouter from "./health";
+import neo4jRouter from "./neo4j";
 import optimizeRouter from "./optimize";
 import scheduleRouter from "./schedule";
 import seedRouter from "./seed";
@@ -20,5 +21,6 @@ apiRouter.use("/export", exportRouter);
 apiRouter.use("/seed", seedRouter);
 apiRouter.use("/schedule", scheduleRouter);
 apiRouter.use("/explain", explainRouter);
+apiRouter.use("/neo4j", neo4jRouter);
 
 export default apiRouter;

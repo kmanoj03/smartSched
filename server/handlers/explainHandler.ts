@@ -2,9 +2,17 @@ import type { NextFunction, Request, Response } from "express";
 import { z } from "zod";
 import { ScheduleWeekModel } from "../models";
 import { HttpError } from "../utils/httpError";
+import { explainShiftFromGraph, isNeo4jEnabled } from "../utils/neo4j";
 
 interface ShiftView {
   shiftId: string;
+}
+
+interface ShiftExplanationView {
+  personId: string;
+  reasons: string[];
+  score: number;
+  breakdown: Record<string, unknown>;
 }
 
 const explainParamsSchema = z.object({
@@ -31,7 +39,29 @@ export const explainShift = async (req: Request, res: Response, next: NextFuncti
       throw new HttpError("Shift not found in selected week", "SHIFT_NOT_FOUND", 404);
     }
 
-    const explanations = (schedule.explanations as Record<string, unknown[]> | undefined)?.[shiftId] ?? [];
+    const explanations =
+      ((schedule.explanations as Record<string, ShiftExplanationView[]> | undefined)?.[shiftId] ?? []).map(
+        (item) => ({ ...item, reasons: [...item.reasons] })
+      );
+
+    if (isNeo4jEnabled()) {
+      const graph = await explainShiftFromGraph(weekStartISO, shiftId);
+      if (graph) {
+        const traceByPerson = new Map<string, string[]>();
+        graph.trace.forEach((item) => {
+          const current = traceByPerson.get(item.personId) ?? [];
+          traceByPerson.set(item.personId, [...current, item.path]);
+        });
+
+        explanations.forEach((item) => {
+          const traces = traceByPerson.get(item.personId);
+          if (traces && traces.length > 0) {
+            item.reasons.push(`Graph trace: ${traces.slice(0, 2).join(" | ")}`);
+          }
+        });
+      }
+    }
+
     res.json({
       weekId: schedule.weekId,
       weekStartISO,

@@ -5,6 +5,7 @@ import { AvailabilityWeekModel, CrewMemberModel, EventWeekModel, ScheduleWeekMod
 import { optimizeWeek, type OptimizeWeekInput, type OptimizeWeekResult } from "../utils/scheduler";
 import { HttpError } from "../utils/httpError";
 import { eventDtoSchema } from "../utils/validators";
+import { upsertScheduleGraph } from "../utils/neo4j";
 
 const runOptimizeSchema = z.object({
   weekStartISO: z.string().min(1)
@@ -142,6 +143,10 @@ export const runOptimize = async (req: Request, res: Response, next: NextFunctio
       explanations: result.explanations,
       meta: result.meta
     });
+
+    if (result.meta.status === "FEASIBLE") {
+      await upsertScheduleGraph({ weekStartISO, input, result });
+    }
 
     res.json({
       weekId,
